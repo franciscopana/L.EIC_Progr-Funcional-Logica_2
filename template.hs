@@ -93,12 +93,10 @@ run (Store var:code, val:stack, state) | any (\(var', _) -> var == var') state =
                                        | otherwise = run(code, stack, (var, val):state)
 
 -- Branch and Loop operations
-run (Branch code1 code2:code, Tt:stack, state) = run(code, stack, state)
-run (Branch code1 code2:code, Ff:stack, state) = run(code, stack, state)
-run (Branch code1 code2:code, stack, state) = run(code, stack, state)
-run (Loop code1 code2:code, Tt:stack, state) = run(code, stack, state)
-run (Loop code1 code2:code, Ff:stack, state) = run(code, stack, state)
-run (Loop code1 code2:code, stack, state) = run(code, stack, state)
+run (Branch c1 c2:code, Tt:stack, state) = run(c1 ++ code, stack, state)
+run (Branch c1 c2:code, Ff:stack, state) = run(c2 ++ code, stack, state)
+run (Branch c1 c2:code, stack, state) = error "Run-time error"
+run (Loop c1 c2:code, stack, state) = run(c1 ++ [Branch (c2 ++ [Loop c1 c2]) [Noop]] ++ code, stack, state)
 
 -- Noop operation
 run (Noop:code, stack, state) = run(code, stack, state)
@@ -129,17 +127,145 @@ testAssembler code = (stack2Str stack, state2Str state)
 
 -- TODO: Define the types Aexp, Bexp, Stm and Program
 
--- compA :: Aexp -> Code
-compA = undefined -- TODO
+-- Code example 1:
+-- 1. x := 5;
+-- 2. x := x + 1;
+-- parsed code:
+-- [Assign "x" (Num 5), Assign "x" (AddExp (Var "x") (Num 1))]
+-- Compiled code:
+-- [Push 5, Store "x", Fetch "x", Push 1, Add, Store "x"]
 
--- compB :: Bexp -> Code
-compB = undefined -- TODO
+-- Code example 2:
+-- 1. x := 0 - 2;
+-- 2. y := 3;
+-- 3. if (x <= y) then x := 1; else y := 2;
+-- Compiled code:
+-- [Push 2, Push 0, Sub, Store "x", Push 3, Store "y", 
+-- Fetch "y", Fetch "x", Le,
+-- Branch [Push 1, Store "x"] [Push 2, Store "y"]]
 
--- compile :: Program -> Code
-compile = undefined -- TODO
+-- data for arithmetic expressions
+data Aexp = Num Integer | Var String | AddExp Aexp Aexp | SubExp Aexp Aexp | MultExp Aexp Aexp
+  deriving Show
 
--- parse :: String -> Program
-parse = undefined -- TODO
+-- data for boolean expressions
+data Bexp = TruExp | FalsExp | EquExp Aexp Aexp | LeExp Aexp Aexp | AndExp Bexp Bexp | NegExp Bexp
+  deriving Show
+
+-- data for statements
+data Stm = Assign String Aexp | If Bexp Stm Stm | While Bexp Stm | Seq Stm Stm
+  deriving Show
+
+type Program = [Stm]
+
+-- compile arithmetic expressions
+compA :: Aexp -> Code
+compA (Num n) = [Push n]
+compA (Var var) = [Fetch var]
+compA (AddExp a1 a2) = compA a1 ++ compA a2 ++ [Add]
+compA (SubExp a1 a2) = compA a1 ++ compA a2 ++ [Sub]
+compA (MultExp a1 a2) = compA a1 ++ compA a2 ++ [Mult]
+
+compB :: Bexp -> Code
+compB TruExp = [Tru]
+compB FalsExp = [Fals]
+compB (EquExp a1 a2) = compA a1 ++ compA a2 ++ [Equ]
+compB (LeExp a1 a2) = compA a1 ++ compA a2 ++ [Le]
+compB (AndExp b1 b2) = compB b1 ++ compB b2 ++ [And]
+compB (NegExp b) = compB b ++ [Neg]
+
+compile :: Program -> Code
+compile [] = []
+compile (Assign var a:xs) = compA a ++ [Store var] ++ compile xs
+compile (If b s1 s2:xs) = compB b ++ [Branch (compile [s1]) (compile [s2])] ++ compile xs
+compile (While b s:xs) = compB b ++ [Branch (compile [s] ++ compile [While b s]) [Noop]] ++ compile xs
+compile (Seq s1 s2:xs) = compile [s1] ++ compile [s2] ++ compile xs
+
+-- Test compA
+-- Test 1: compA (Num 10)
+-- Expected output: [Push 10]
+-- compA (Num 10)
+
+-- Test 2: compA (AddExp (Num 5) (Num 3))
+-- Expected output: [Push 5, Push 3, Add]
+-- compA (AddExp (Num 5) (Num 3))
+
+-- Test compB
+-- Test 3: compB TruExp
+-- Expected output: [Tru]
+-- compB TruExp
+
+-- Test 4: compB (AndExp TruExp FalsExp)
+-- Expected output: [Tru, Fals, And]
+-- compB (AndExp TruExp FalsExp)
+
+-- Test compile
+-- Test 5: compile [Assign "x" (Num 10)]
+-- Expected output: [Push 10, Store "x"]
+-- compile [Assign "x" (Num 10)]
+
+-- Test 6: compile [If TruExp (Assign "x" (Num 10)) (Assign "x" (Num 20))]
+-- Expected output: [Tru, Branch [Push 10, Store "x"] [Push 20, Store "x"]]
+-- compile [If TruExp (Assign "x" (Num 10)) (Assign "x" (Num 20))]
+
+-- Test 7: compile [Assign "x" (Num 10), Assign "y" (Num 20)]
+-- Expected output: [Push 10, Store "x", Push 20, Store "y"]
+-- compile [Assign "x" (Num 10), Assign "y" (Num 20)]
+
+-- Test 8: compile [If (AndExp TruExp FalsExp) (Assign "x" (Num 10)) (Assign "x" (Num 20))]
+-- Expected output: [Tru, Fals, And, Branch [Push 10, Store "x"] [Push 20, Store "x"]]
+-- compile [If (AndExp TruExp FalsExp) (Assign "x" (Num 10)) (Assign "x" (Num 20))]
+
+-- Test 9: compile [While TruExp [Assign "x" (AddExp (Var "x") (Num 1))]]
+-- Expected output: [Tru, Branch [Fetch "x", Push 1, Add, Store "x", Tru, Branch [Fetch "x", Push 1, Add, Store "x"] [Noop]] [Noop]]
+-- compile [While TruExp [Assign "x" (AddExp (Var "x") (Num 1))]]
+
+-- lexer divides a string into a list of tokens
+-- for example "x := 5" is transformed into ["x", ":=", "5"]
+lexer :: String -> [String]
+lexer [] = []
+lexer (':':'=':str) = ":=":lexer str
+lexer ('<':'=':str) = "<=":lexer str
+lexer ('=':'=':str) = "==":lexer str
+lexer (' ':str) = lexer str
+lexer ('\n':str) = lexer str
+lexer ('\t':str) = lexer str
+lexer ('=':str) = "=":lexer str
+lexer ('<':str) = "<":lexer str
+lexer ('+':str) = "+":lexer str
+lexer ('-':str) = "-":lexer str
+lexer ('*':str) = "*":lexer str
+lexer ('(':str) = "(":lexer str
+lexer (')':str) = ")":lexer str
+lexer (';':str) = ";":lexer str
+lexer ('i':'f':str) = "if":lexer str
+lexer ('t':'h':'e':'n':str) = "then":lexer str
+lexer ('e':'l':'s':'e':str) = "else":lexer str
+lexer ('w':'h':'i':'l':'e':str) = "while":lexer str
+lexer ('d':'o':str) = "do":lexer str
+lexer ('n':'o':'t':str) = "not":lexer str
+lexer ('a':'n':'d':str) = "and":lexer str
+lexer ('T':'r':'u':'e':str) = "True":lexer str
+lexer ('F':'a':'l':'s':'e':str) = "False":lexer str
+lexer (c:str) | c `elem` ['0'..'9'] = (c:takeWhile (`elem` ['0'..'9']) str):lexer (dropWhile (`elem` ['0'..'9']) str)
+              | c `elem` ['a'..'z'] = (c:takeWhile (`elem` ['a'..'z']) str):lexer (dropWhile (`elem` ['a'..'z']) str)
+              | otherwise = error "Lexer error"
+
+
+-- Define a parser which transforms an imperative program represented as a string
+-- into its corresponding representation in the Stm data (a list of statements Stm).
+-- Parser must use the lexer to transform the string into a list of tokens and then
+-- use the list of tokens to build the Stm data.
+
+-- if parser receives "x := 10; x := x + 1"
+-- it must call lexer and receive ["x", ":=", "10", ";", "x", ":=", "x", "+", "1"]
+-- then it must transform the received list into the following list of statements:
+-- [Assign "x" (Num 10), Assign "x" (AddExp (Var "x") (Num 1))]
+-- so we must find ";" and between each two ";" we must find the corresponding statement.
+-- Each statement is an element of the list of statements.
+
+parse :: String -> Program
+parse [] = []
 
 -- To help you test your parser
 testParser :: String -> (String, String)
