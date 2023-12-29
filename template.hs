@@ -1,5 +1,4 @@
 import Data.List
-import Data.List
 
 -- PFL 2023/24 - Haskell practical assignment quickstart
 -- Updated on 27/12/2023
@@ -40,34 +39,69 @@ state2Str state = intercalate "," (map (\(var, val) -> var ++ "=" ++ stackElem2S
 
 run :: (Code, Stack, State) -> (Code, Stack, State)
 run ([], stack, state) = ([], stack, state)
+
+-- Push n operation
 run ((Push n):code, stack, state) = run(code, (I n):stack, state)
+
+-- Add operation
 run (Add:code, (I n1):(I n2):stack, state) = run(code, (I (n1 + n2)):stack, state)
+run (Add:code, stack, state) = error "Run-time error"
+
+-- Mult operation
 run (Mult:code, (I n1):(I n2):stack, state) = run(code, (I (n1 * n2)):stack, state)
+run (Mult:code, stack, state) = error "Run-time error"
+
+-- Sub operation
 run (Sub:code, (I n1):(I n2):stack, state) = run(code, (I (n1 - n2)):stack, state)
+run (Sub:code, stack, state) = error "Run-time error"
+
+-- Push Boolean value
 run (Tru:code, stack, state) = run(code, Tt:stack, state)
 run (Fals:code, stack, state) = run(code, Ff:stack, state)
+
+-- Equality operation
 run (Equ:code, (I n1):(I n2):stack, state) = run(code, if n1 == n2 then Tt:stack else Ff:stack, state)
 run (Equ:code, Tt:Tt:stack, state) = run(code, Tt:stack, state)
 run (Equ:code, Tt:Ff:stack, state) = run(code, Ff:stack, state)
 run (Equ:code, Ff:Tt:stack, state) = run(code, Ff:stack, state)
 run (Equ:code, Ff:Ff:stack, state) = run(code, Tt:stack, state)
+run (Equ:code, stack, state) = error "Run-time error"
+
+-- Less than or equal operation
 run (Le:code, (I n1):(I n2):stack, state) = run(code, if n1 <= n2 then Tt:stack else Ff:stack, state)
+run (Le:code, Tt:Tt:stack, state) = error "Run-time error"
+
+-- And operation
 run (And:code, Tt:Tt:stack, state) = run(code, Tt:stack, state)
 run (And:code, Tt:Ff:stack, state) = run(code, Ff:stack, state)
 run (And:code, Ff:Tt:stack, state) = run(code, Ff:stack, state)
 run (And:code, Ff:Ff:stack, state) = run(code, Ff:stack, state)
+run (And:code, stack, state) = error "Run-time error"
+
+-- Negation operation
 run (Neg:code, Tt:stack, state) = run(code, Ff:stack, state)
 run (Neg:code, Ff:stack, state) = run(code, Tt:stack, state)
-run (Fetch var:code, stack, state) = run(code, (val):stack, state)
-  where Just val = lookup var state
-run (Store var:code, val:stack, state) = run(code, stack, (var, val):state)
-run (Noop:code, stack, state) = run(code, stack, state)
+run (Neg:code, stack, state) = error "Run-time error"
+
+-- Fetch operation
+run (Fetch var:code, stack, state) = case lookup var state of
+  Just val -> run(code, val:stack, state)
+  Nothing -> error "Run-time error"
+  
+-- Store operation
+run (Store var:code, val:stack, state) | any (\(var', _) -> var == var') state = run(code, stack, (var, val):filter (\(var', _) -> var /= var') state)
+                                       | otherwise = run(code, stack, (var, val):state)
+
+-- Branch and Loop operations
 run (Branch code1 code2:code, Tt:stack, state) = run(code, stack, state)
 run (Branch code1 code2:code, Ff:stack, state) = run(code, stack, state)
 run (Branch code1 code2:code, stack, state) = run(code, stack, state)
 run (Loop code1 code2:code, Tt:stack, state) = run(code, stack, state)
 run (Loop code1 code2:code, Ff:stack, state) = run(code, stack, state)
 run (Loop code1 code2:code, stack, state) = run(code, stack, state)
+
+-- Noop operation
+run (Noop:code, stack, state) = run(code, stack, state)
 
 -- To help you test your assembler
 testAssembler :: Code -> (String, String)
@@ -82,7 +116,7 @@ testAssembler code = (stack2Str stack, state2Str state)
 -- testAssembler [Push (-20),Tru,Tru,Neg] == ("False,True,-20","")
 -- testAssembler [Push (-20),Tru,Tru,Neg,Equ] == ("False,-20","")
 -- testAssembler [Push (-20),Push (-21), Le] == ("True","")
--- MAL testAssembler [Push 5,Store "x",Push 1,Fetch "x",Sub,Store "x"] == ("","x=4")
+-- testAssembler [Push 5,Store "x",Push 1,Fetch "x",Sub,Store "x"] == ("","x=4")
 -- testAssembler [Push 10,Store "i",Push 1,Store "fact",Loop [Push 1,Fetch "i",Equ,Neg] [Fetch "i",Fetch "fact",Mult,Store "fact",Push 1,Fetch "i",Sub,Store "i"]] == ("","fact=3628800,i=1")
 -- If you test:
 -- testAssembler [Push 1,Push 2,And]
