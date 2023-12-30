@@ -137,7 +137,7 @@ data Aexp = NUM Integer | VAR String | ADD Aexp Aexp | SUB Aexp Aexp | MULT Aexp
   deriving Show
 
 -- data for boolean expressions
-data Bexp = TRU | FALS | EQU Aexp Aexp | LE Aexp Aexp | AND Bexp Bexp | NEG Bexp
+data Bexp = TRU | FALS | EQU Aexp Aexp | EQUB Bexp Bexp | LE Aexp Aexp | AND Bexp Bexp | NEG Bexp
   deriving Show
 
 -- data for statements
@@ -241,57 +241,72 @@ statement = do
 statements :: Parser [Stm]
 statements = P.many (P.spaces >> statement)
 
-tru :: Parser Bexp
-tru = do
-  _ <- P.string "true"
-  P.spaces
-  return TRU
+-- Booleans:
+-- with aryhtmetic expressions: <=, ==
+-- with boolean expressions: not, =, and
+-- precendence: "<=" > "==" > "not" > "=" > "and"
 
-fals :: Parser Bexp
-fals = do
-  _ <- P.string "false"
-  P.spaces
-  return FALS
-
-equ :: Parser Bexp
-equ = do
-  e1 <- P.try variable P.<|> number
+equalityAexp :: Parser Bexp
+equalityAexp = do
+  a1 <- factor
   P.spaces
   _ <- P.string "=="
   P.spaces
-  e2 <- P.try variable P.<|> number
-  return $ EQU e1 e2
+  a2 <- factor
+  return $ EQU a1 a2
 
-le :: Parser Bexp
-le = do
-  e1 <- P.try variable P.<|> number
+equalityBexp :: Parser Bexp
+equalityBexp = do
+  b1 <- simpleBoolean
+  P.spaces
+  _ <- P.string "="
+  P.spaces
+  b2 <- simpleBoolean
+  return $ EQUB b1 b2
+
+inequality :: Parser Bexp
+inequality = do
+  a1 <- factor
   P.spaces
   _ <- P.string "<="
   P.spaces
-  e2 <- P.try variable P.<|> number
-  return $ LE e1 e2
-
-andExp :: Parser Bexp
-andExp = do
-  e1 <- simpleBoolean
-  P.spaces
-  _ <- P.string "&&"
-  P.spaces
-  e2 <- simpleBoolean
-  return $ AND e1 e2
-
-neg :: Parser Bexp
-neg = do
-  _ <- P.string "not"
-  P.spaces
-  e <- simpleBoolean
-  return $ NEG e
+  a2 <- factor
+  return $ LE a1 a2
 
 simpleBoolean :: Parser Bexp
-simpleBoolean = P.try tru P.<|> P.try fals P.<|> P.try equ P.<|> le
+simpleBoolean = 
+      P.try (P.string "True" >> return TRU)
+      P.<|> P.try (P.string "False" >> return FALS)
+      P.<|> P.try inequality
+      P.<|> P.try equalityAexp
+      P.<|> P.try negation
+      P.<|> P.try (P.char '(' *> boolean <* P.char ')')
+      P.<|> P.try equalityBexp
+
+negation :: Parser Bexp
+negation = do
+  P.spaces
+  _ <- P.string "not"
+  P.spaces
+  bexp <- simpleBoolean
+  return $ NEG bexp
+
+boolTerm :: Parser Bexp
+boolTerm = do
+  f <- simpleBoolean
+  fs <- P.many (P.try conjunction)
+  return $ foldl (\acc op -> op acc) f fs
+
+conjunction :: Parser (Bexp -> Bexp)
+conjunction = do
+  P.spaces
+  _ <- P.string "and"
+  P.spaces
+  bexp <- boolTerm
+  return (`AND` bexp)
 
 boolean :: Parser Bexp
-boolean = P.try andExp P.<|> P.try neg P.<|> simpleBoolean
+boolean = boolTerm
 
 parse :: String -> Program
 parse str = case P.parse statements "" str of
