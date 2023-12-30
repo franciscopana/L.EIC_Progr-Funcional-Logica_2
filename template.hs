@@ -127,23 +127,6 @@ testAssembler code = (stack2Str stack, state2Str state)
 
 -- TODO: Define the types Aexp, Bexp, Stm and Program
 
--- Code example 1:
--- 1. x := 5;
--- 2. x := x + 1;
--- parsed code:
--- [ASSIGN "x" (NUM 5), ASSIGN "x" (ADD (VAR "x") (NUM 1))]
--- Compiled code:
--- [Push 5, Store "x", Fetch "x", Push 1, Add, Store "x"]
-
--- Code example 2:
--- 1. x := 0 - 2;
--- 2. y := 3;
--- 3. if (x <= y) then x := 1; else y := 2;
--- Compiled code:
--- [Push 2, Push 0, Sub, Store "x", Push 3, Store "y", 
--- Fetch "y", Fetch "x", Le,
--- Branch [Push 1, Store "x"] [Push 2, Store "y"]]
-
 -- data for arithmetic expressions
 data Aexp = NUM Integer | VAR String | ADD Aexp Aexp | SUB Aexp Aexp | MULT Aexp Aexp
   deriving Show
@@ -153,7 +136,7 @@ data Bexp = TRU | FALS | EQU Aexp Aexp | LE Aexp Aexp | AND Bexp Bexp | NEG Bexp
   deriving Show
 
 -- data for statements
-data Stm = ASSIGN String Aexp | IF Bexp Stm Stm | WHILE Bexp [Stm]
+data Stm = ASSIGN String Aexp | IF Bexp Stm Stm | WHILE Bexp [Stm] | SEQ [Stm]
   deriving Show
 
 type Program = [Stm]
@@ -179,6 +162,7 @@ compile [] = []
 compile (ASSIGN var a:xs) = compA a ++ [Store var] ++ compile xs
 compile (IF b s1 s2:xs) = compB b ++ [Branch (compile [s1]) (compile [s2])] ++ compile xs
 compile (WHILE b s:xs) = Loop (compB b) (compile s) : compile xs
+compile (SEQ s:xs) = compile s ++ compile xs
 
 -- lexer divides a string into a list of tokens
 -- for example "x := 5" is transformed into ["x", ":=", "5"]
