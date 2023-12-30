@@ -169,57 +169,7 @@ compile (IF b s1 s2:xs) = compB b ++ [Branch (compile [s1]) (compile [s2])] ++ c
 compile (WHILE b s:xs) = Loop (compB b) (compile s) : compile xs
 compile (SEQ s:xs) = compile s ++ compile xs
 
--- lexer divides a string into a list of tokens
--- for example "x := 5" is transformed into ["x", ":=", "5"]
-lexer :: String -> [String]
-lexer [] = []
-lexer (':':'=':str) = ":=":lexer str
-lexer ('<':'=':str) = "<=":lexer str
-lexer ('=':'=':str) = "==":lexer str
-lexer (' ':str) = lexer str
-lexer ('\n':str) = lexer str
-lexer ('\t':str) = lexer str
-lexer ('=':str) = "=":lexer str
-lexer ('<':str) = "<":lexer str
-lexer ('+':str) = "+":lexer str
-lexer ('-':str) = "-":lexer str
-lexer ('*':str) = "*":lexer str
-lexer ('(':str) = "(":lexer str
-lexer (')':str) = ")":lexer str
-lexer (';':str) = ";":lexer str
-lexer ('i':'f':str) = "if":lexer str
-lexer ('t':'h':'e':'n':str) = "then":lexer str
-lexer ('e':'l':'s':'e':str) = "else":lexer str
-lexer ('w':'h':'i':'l':'e':str) = "while":lexer str
-lexer ('d':'o':str) = "do":lexer str
-lexer ('n':'o':'t':str) = "not":lexer str
-lexer ('a':'n':'d':str) = "and":lexer str
-lexer ('T':'r':'u':'e':str) = "True":lexer str
-lexer ('F':'a':'l':'s':'e':str) = "False":lexer str
-lexer (c:str) | c `elem` ['0'..'9'] = (c:takeWhile (`elem` ['0'..'9']) str):lexer (dropWhile (`elem` ['0'..'9']) str)
-              | c `elem` ['a'..'z'] = (c:takeWhile (`elem` ['a'..'z']) str):lexer (dropWhile (`elem` ['a'..'z']) str)
-              | otherwise = error "Lexer error"
-
-
--- Define a parser which transforms an imperative program represented as a string
--- into its corresponding representation in the Stm data (a list of statements Stm).
--- Parser must use the lexer to transform the string into a list of tokens and then
--- use the list of tokens to build the Stm data.
-
--- if parser receives "x := 10; x := x + 1"
--- it must call lexer and receive ["x", ":=", "10", ";", "x", ":=", "x", "+", "1"]
--- then it must transform the received list into the following list of statements:
--- [ASSIGN "x" (NUM 10), ASSIGN "x" (ADD (VAR "x") (NUM 1))]
--- x := 10; | "x" with identifier and "10" with NUM
--- y := x + 2; | "y" with identifier and "x" with VAR and "2" with NUM
--- so we must find ";" and between each two ";" we must find the corresponding statement.
--- Each statement is an element of the list of statements.
--- Token data type
-
-
-
-
--- Define your parsers
+-- Parsers
 identifier :: Parser String
 identifier = P.many1 P.letter
 
@@ -229,32 +179,46 @@ number = NUM . read <$> P.many1 P.digit
 variable :: Parser Aexp
 variable = VAR <$> identifier
 
-addition :: Parser Aexp
-addition = do
-  e1 <- P.try variable P.<|> number
-  P.spaces
-  _ <- P.char '+'
-  P.spaces
-  e2 <- P.try variable P.<|> number
-  return $ ADD e1 e2
+factor :: Parser Aexp
+factor = P.try variable 
+     P.<|> number 
+     P.<|> (P.char '(' *> expr <* P.char ')')
 
-subtraction :: Parser Aexp
-subtraction = do
-  e1 <- P.try variable P.<|> number
-  P.spaces
-  _ <- P.char '-'
-  P.spaces
-  e2 <- P.try variable P.<|> number
-  return $ SUB e1 e2
-
-multiplication :: Parser Aexp
+multiplication :: Parser (Aexp -> Aexp, Aexp)
 multiplication = do
-  e1 <- P.try variable P.<|> number
   P.spaces
   _ <- P.char '*'
   P.spaces
-  e2 <- P.try variable P.<|> number
-  return $ MULT e1 e2
+  e2 <- factor
+  return ((\e1 -> MULT e1 e2), e2)
+
+addition :: Parser (Aexp -> Aexp, Aexp)
+addition = do
+  P.spaces
+  _ <- P.char '+'
+  P.spaces
+  e2 <- term
+  return ((\e1 -> ADD e1 e2), e2)
+
+subtraction :: Parser (Aexp -> Aexp, Aexp)
+subtraction = do
+  P.spaces
+  _ <- P.char '-'
+  P.spaces
+  e2 <- term
+  return ((\e1 -> SUB e1 e2), e2)
+
+term :: Parser Aexp
+term = do
+  f <- factor
+  rest <- P.many (P.try multiplication P.<|> addition P.<|> subtraction)
+  return $ foldl (\acc (op, val) -> op acc) f rest
+
+expr :: Parser Aexp
+expr = do
+  t <- term
+  rest <- P.many (P.try addition P.<|> subtraction)
+  return $ foldl (\acc (op, val) -> op acc) t rest
 
 assignment :: Parser Stm
 assignment = do
@@ -262,8 +226,8 @@ assignment = do
   P.spaces
   _ <- P.string ":="
   P.spaces
-  expr <- P.try multiplication P.<|> P.try subtraction P.<|> P.try addition P.<|> number
-  return $ ASSIGN var expr
+  e <- expr
+  return $ ASSIGN var e
 
 statement :: Parser Stm
 statement = do
@@ -277,6 +241,58 @@ statement = do
 statements :: Parser [Stm]
 statements = P.many (P.spaces >> statement)
 
+tru :: Parser Bexp
+tru = do
+  _ <- P.string "true"
+  P.spaces
+  return TRU
+
+fals :: Parser Bexp
+fals = do
+  _ <- P.string "false"
+  P.spaces
+  return FALS
+
+equ :: Parser Bexp
+equ = do
+  e1 <- P.try variable P.<|> number
+  P.spaces
+  _ <- P.string "=="
+  P.spaces
+  e2 <- P.try variable P.<|> number
+  return $ EQU e1 e2
+
+le :: Parser Bexp
+le = do
+  e1 <- P.try variable P.<|> number
+  P.spaces
+  _ <- P.string "<="
+  P.spaces
+  e2 <- P.try variable P.<|> number
+  return $ LE e1 e2
+
+andExp :: Parser Bexp
+andExp = do
+  e1 <- simpleBoolean
+  P.spaces
+  _ <- P.string "&&"
+  P.spaces
+  e2 <- simpleBoolean
+  return $ AND e1 e2
+
+neg :: Parser Bexp
+neg = do
+  _ <- P.string "not"
+  P.spaces
+  e <- simpleBoolean
+  return $ NEG e
+
+simpleBoolean :: Parser Bexp
+simpleBoolean = P.try tru P.<|> P.try fals P.<|> P.try equ P.<|> le
+
+boolean :: Parser Bexp
+boolean = P.try andExp P.<|> P.try neg P.<|> simpleBoolean
+
 parse :: String -> Program
 parse str = case P.parse statements "" str of
   Left err -> error $ show err
@@ -286,7 +302,7 @@ parse str = case P.parse statements "" str of
 testParser :: String -> (String, String)
 testParser programCode = (stack2Str stack, state2Str state)
   where (_,stack,state) = run(compile (parse programCode), createEmptyStack, createEmptyState)
-  
+
 -- Examples:
 -- testParser "x := 5; x := x - 1;" == ("","x=4")
 -- testParser "x := 0 - 2;" == ("","x=-2")
