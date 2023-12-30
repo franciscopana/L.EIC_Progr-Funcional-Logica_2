@@ -116,10 +116,10 @@ testAssembler code = (stack2Str stack, state2Str state)
 -- testAssembler [Push (-20),Push (-21), Le] == ("True","")
 -- testAssembler [Push 5,Store "x",Push 1,Fetch "x",Sub,Store "x"] == ("","x=4")
 -- testAssembler [Push 10,Store "i",Push 1,Store "fact",Loop [Push 1,Fetch "i",Equ,Neg] [Fetch "i",Fetch "fact",Mult,Store "fact",Push 1,Fetch "i",Sub,Store "i"]] == ("","fact=3628800,i=1")
--- If you test:
+-- IF you test:
 -- testAssembler [Push 1,Push 2,And]
 -- You should get an exception with the string: "Run-time error"
--- If you test:
+-- IF you test:
 -- testAssembler [Tru,Tru,Store "y", Fetch "x",Tru]
 -- You should get an exception with the string: "Run-time error"
 
@@ -131,7 +131,7 @@ testAssembler code = (stack2Str stack, state2Str state)
 -- 1. x := 5;
 -- 2. x := x + 1;
 -- parsed code:
--- [Assign "x" (Num 5), Assign "x" (AddExp (Var "x") (Num 1))]
+-- [ASSIGN "x" (NUM 5), ASSIGN "x" (ADD (VAR "x") (NUM 1))]
 -- Compiled code:
 -- [Push 5, Store "x", Fetch "x", Push 1, Add, Store "x"]
 
@@ -145,80 +145,40 @@ testAssembler code = (stack2Str stack, state2Str state)
 -- Branch [Push 1, Store "x"] [Push 2, Store "y"]]
 
 -- data for arithmetic expressions
-data Aexp = Num Integer | Var String | AddExp Aexp Aexp | SubExp Aexp Aexp | MultExp Aexp Aexp
+data Aexp = NUM Integer | VAR String | ADD Aexp Aexp | SUB Aexp Aexp | MULT Aexp Aexp
   deriving Show
 
 -- data for boolean expressions
-data Bexp = TruExp | FalsExp | EquExp Aexp Aexp | LeExp Aexp Aexp | AndExp Bexp Bexp | NegExp Bexp
+data Bexp = TRU | FALS | EQU Aexp Aexp | LE Aexp Aexp | AND Bexp Bexp | NEG Bexp
   deriving Show
 
 -- data for statements
-data Stm = Assign String Aexp | If Bexp Stm Stm | While Bexp Stm | Seq Stm Stm
+data Stm = ASSIGN String Aexp | IF Bexp Stm Stm | WHILE Bexp [Stm]
   deriving Show
 
 type Program = [Stm]
 
 -- compile arithmetic expressions
 compA :: Aexp -> Code
-compA (Num n) = [Push n]
-compA (Var var) = [Fetch var]
-compA (AddExp a1 a2) = compA a1 ++ compA a2 ++ [Add]
-compA (SubExp a1 a2) = compA a1 ++ compA a2 ++ [Sub]
-compA (MultExp a1 a2) = compA a1 ++ compA a2 ++ [Mult]
+compA (NUM n) = [Push n]
+compA (VAR var) = [Fetch var]
+compA (ADD a1 a2) = compA a1 ++ compA a2 ++ [Add]
+compA (SUB a1 a2) = compA a1 ++ compA a2 ++ [Sub]
+compA (MULT a1 a2) = compA a1 ++ compA a2 ++ [Mult]
 
 compB :: Bexp -> Code
-compB TruExp = [Tru]
-compB FalsExp = [Fals]
-compB (EquExp a1 a2) = compA a1 ++ compA a2 ++ [Equ]
-compB (LeExp a1 a2) = compA a1 ++ compA a2 ++ [Le]
-compB (AndExp b1 b2) = compB b1 ++ compB b2 ++ [And]
-compB (NegExp b) = compB b ++ [Neg]
+compB TRU = [Tru]
+compB FALS = [Fals]
+compB (EQU a1 a2) = compA a2 ++ compA a1 ++ [Equ]
+compB (LE a1 a2) = compA a2 ++ compA a1 ++ [Le]
+compB (AND b1 b2) = compB b2 ++ compB b1 ++ [And]
+compB (NEG b) = compB b ++ [Neg]
 
 compile :: Program -> Code
 compile [] = []
-compile (Assign var a:xs) = compA a ++ [Store var] ++ compile xs
-compile (If b s1 s2:xs) = compB b ++ [Branch (compile [s1]) (compile [s2])] ++ compile xs
-compile (While b s:xs) = compB b ++ [Branch (compile [s] ++ compile [While b s]) [Noop]] ++ compile xs
-compile (Seq s1 s2:xs) = compile [s1] ++ compile [s2] ++ compile xs
-
--- Test compA
--- Test 1: compA (Num 10)
--- Expected output: [Push 10]
--- compA (Num 10)
-
--- Test 2: compA (AddExp (Num 5) (Num 3))
--- Expected output: [Push 5, Push 3, Add]
--- compA (AddExp (Num 5) (Num 3))
-
--- Test compB
--- Test 3: compB TruExp
--- Expected output: [Tru]
--- compB TruExp
-
--- Test 4: compB (AndExp TruExp FalsExp)
--- Expected output: [Tru, Fals, And]
--- compB (AndExp TruExp FalsExp)
-
--- Test compile
--- Test 5: compile [Assign "x" (Num 10)]
--- Expected output: [Push 10, Store "x"]
--- compile [Assign "x" (Num 10)]
-
--- Test 6: compile [If TruExp (Assign "x" (Num 10)) (Assign "x" (Num 20))]
--- Expected output: [Tru, Branch [Push 10, Store "x"] [Push 20, Store "x"]]
--- compile [If TruExp (Assign "x" (Num 10)) (Assign "x" (Num 20))]
-
--- Test 7: compile [Assign "x" (Num 10), Assign "y" (Num 20)]
--- Expected output: [Push 10, Store "x", Push 20, Store "y"]
--- compile [Assign "x" (Num 10), Assign "y" (Num 20)]
-
--- Test 8: compile [If (AndExp TruExp FalsExp) (Assign "x" (Num 10)) (Assign "x" (Num 20))]
--- Expected output: [Tru, Fals, And, Branch [Push 10, Store "x"] [Push 20, Store "x"]]
--- compile [If (AndExp TruExp FalsExp) (Assign "x" (Num 10)) (Assign "x" (Num 20))]
-
--- Test 9: compile [While TruExp [Assign "x" (AddExp (Var "x") (Num 1))]]
--- Expected output: [Tru, Branch [Fetch "x", Push 1, Add, Store "x", Tru, Branch [Fetch "x", Push 1, Add, Store "x"] [Noop]] [Noop]]
--- compile [While TruExp [Assign "x" (AddExp (Var "x") (Num 1))]]
+compile (ASSIGN var a:xs) = compA a ++ [Store var] ++ compile xs
+compile (IF b s1 s2:xs) = compB b ++ [Branch (compile [s1]) (compile [s2])] ++ compile xs
+compile (WHILE b s:xs) = Loop (compB b) (compile s) : compile xs
 
 -- lexer divides a string into a list of tokens
 -- for example "x := 5" is transformed into ["x", ":=", "5"]
@@ -260,7 +220,7 @@ lexer (c:str) | c `elem` ['0'..'9'] = (c:takeWhile (`elem` ['0'..'9']) str):lexe
 -- if parser receives "x := 10; x := x + 1"
 -- it must call lexer and receive ["x", ":=", "10", ";", "x", ":=", "x", "+", "1"]
 -- then it must transform the received list into the following list of statements:
--- [Assign "x" (Num 10), Assign "x" (AddExp (Var "x") (Num 1))]
+-- [ASSIGN "x" (NUM 10), ASSIGN "x" (ADD (VAR "x") (NUM 1))]
 -- so we must find ";" and between each two ";" we must find the corresponding statement.
 -- Each statement is an element of the list of statements.
 
