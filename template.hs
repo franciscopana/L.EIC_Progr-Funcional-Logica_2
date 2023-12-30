@@ -1,5 +1,10 @@
 import Data.List
 
+--import parsec
+import qualified Text.Parsec as P
+import Text.Parsec.String (Parser)
+
+
 -- PFL 2023/24 - Haskell practical assignment quickstart
 -- Updated on 27/12/2023
 
@@ -145,9 +150,9 @@ type Program = [Stm]
 compA :: Aexp -> Code
 compA (NUM n) = [Push n]
 compA (VAR var) = [Fetch var]
-compA (ADD a1 a2) = compA a1 ++ compA a2 ++ [Add]
-compA (SUB a1 a2) = compA a1 ++ compA a2 ++ [Sub]
-compA (MULT a1 a2) = compA a1 ++ compA a2 ++ [Mult]
+compA (ADD a1 a2) = compA a2 ++ compA a1 ++ [Add]
+compA (SUB a1 a2) = compA a2 ++ compA a1 ++ [Sub]
+compA (MULT a1 a2) = compA a2 ++ compA a1 ++ [Mult]
 
 compB :: Bexp -> Code
 compB TRU = [Tru]
@@ -205,17 +210,83 @@ lexer (c:str) | c `elem` ['0'..'9'] = (c:takeWhile (`elem` ['0'..'9']) str):lexe
 -- it must call lexer and receive ["x", ":=", "10", ";", "x", ":=", "x", "+", "1"]
 -- then it must transform the received list into the following list of statements:
 -- [ASSIGN "x" (NUM 10), ASSIGN "x" (ADD (VAR "x") (NUM 1))]
+-- x := 10; | "x" with identifier and "10" with NUM
+-- y := x + 2; | "y" with identifier and "x" with VAR and "2" with NUM
 -- so we must find ";" and between each two ";" we must find the corresponding statement.
 -- Each statement is an element of the list of statements.
+-- Token data type
+
+
+
+
+-- Define your parsers
+identifier :: Parser String
+identifier = P.many1 P.letter
+
+number :: Parser Aexp
+number = NUM . read <$> P.many1 P.digit
+
+variable :: Parser Aexp
+variable = VAR <$> identifier
+
+addition :: Parser Aexp
+addition = do
+  e1 <- P.try variable P.<|> number
+  P.spaces
+  _ <- P.char '+'
+  P.spaces
+  e2 <- P.try variable P.<|> number
+  return $ ADD e1 e2
+
+subtraction :: Parser Aexp
+subtraction = do
+  e1 <- P.try variable P.<|> number
+  P.spaces
+  _ <- P.char '-'
+  P.spaces
+  e2 <- P.try variable P.<|> number
+  return $ SUB e1 e2
+
+multiplication :: Parser Aexp
+multiplication = do
+  e1 <- P.try variable P.<|> number
+  P.spaces
+  _ <- P.char '*'
+  P.spaces
+  e2 <- P.try variable P.<|> number
+  return $ MULT e1 e2
+
+assignment :: Parser Stm
+assignment = do
+  var <- identifier
+  P.spaces
+  _ <- P.string ":="
+  P.spaces
+  expr <- P.try multiplication P.<|> P.try subtraction P.<|> P.try addition P.<|> number
+  return $ ASSIGN var expr
+
+statement :: Parser Stm
+statement = do
+  P.spaces
+  stmt <- assignment
+  P.spaces
+  _ <- P.char ';'
+  P.spaces
+  return stmt
+
+statements :: Parser [Stm]
+statements = P.many (P.spaces >> statement)
 
 parse :: String -> Program
-parse [] = []
+parse str = case P.parse statements "" str of
+  Left err -> error $ show err
+  Right program -> program
 
 -- To help you test your parser
 testParser :: String -> (String, String)
 testParser programCode = (stack2Str stack, state2Str state)
   where (_,stack,state) = run(compile (parse programCode), createEmptyStack, createEmptyState)
-
+  
 -- Examples:
 -- testParser "x := 5; x := x - 1;" == ("","x=4")
 -- testParser "x := 0 - 2;" == ("","x=-2")
@@ -230,3 +301,9 @@ testParser programCode = (stack2Str stack, state2Str state)
 -- testParser "x := 2; y := (x - 3)*(4 + 2*3); z := x +x*(2);" == ("","x=2,y=-10,z=6")
 -- testParser "i := 10; fact := 1; while (not(i == 1)) do (fact := fact * i; i := i - 1;);" == ("","fact=3628800,i=1")
 
+
+
+-- Parser receives a string and return RIGHT and AST
+-- Parser must send the AST to the compiler (without RIGHT)
+-- Compiler receives AST and return Code
+-- Run receives Code and return (Stack, State)
