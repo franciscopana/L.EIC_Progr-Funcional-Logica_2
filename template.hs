@@ -211,7 +211,7 @@ subtraction = do
 term :: Parser Aexp
 term = do
   f <- factor
-  rest <- P.many (P.try multiplication P.<|> addition P.<|> subtraction)
+  rest <- P.many (P.try multiplication)
   return $ foldl (\acc (op, val) -> op acc) f rest
 
 expr :: Parser Aexp
