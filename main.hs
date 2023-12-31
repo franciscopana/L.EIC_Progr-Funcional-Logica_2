@@ -161,6 +161,7 @@ compB :: Bexp -> Code
 compB TRU = [Tru]
 compB FALS = [Fals]
 compB (EQU a1 a2) = compA a2 ++ compA a1 ++ [Equ]
+compB (EQUB b1 b2) = compB b2 ++ compB b1 ++ [Equ]
 compB (LE a1 a2) = compA a2 ++ compA a1 ++ [Le]
 compB (AND b1 b2) = compB b2 ++ compB b1 ++ [And]
 compB (NEG b) = compB b ++ [Neg]
@@ -221,6 +222,7 @@ addition = do
   _ <- P.char '+'
   P.spaces
   e2 <- term
+  P.spaces
   return ((\e1 -> ADD e1 e2), e2)
 
 subtraction :: Parser (Aexp -> Aexp, Aexp)
@@ -229,6 +231,7 @@ subtraction = do
   _ <- P.char '-'
   P.spaces
   e2 <- term
+  P.spaces
   return ((\e1 -> SUB e1 e2), e2)
 
 term :: Parser Aexp
@@ -262,11 +265,11 @@ assignment = do
 
 equalityAexp :: Parser Bexp
 equalityAexp = do
-  a1 <- factor
+  a1 <- P.try expr P.<|> P.try term P.<|> factor
   P.spaces
   _ <- P.string "=="
   P.spaces
-  a2 <- factor
+  a2 <- P.try expr P.<|> P.try term P.<|> factor
   return $ EQU a1 a2
 
 equalityBexp :: Parser Bexp
@@ -312,7 +315,7 @@ negation = do
 
 boolTerm :: Parser Bexp
 boolTerm = do
-  f <- simpleBoolean
+  f <- P.try equalityBexp P.<|> simpleBoolean
   fs <- P.many (P.try conjunction)
   return $ foldl (\acc op -> op acc) f fs
 
@@ -369,14 +372,14 @@ testParser programCode = (stack2Str stack, state2Str state)
 -- Examples:
 -- testParser "x := 5; x := x - 1;" == ("","x=4")
 -- testParser "x := 0 - 2;" == ("","x=-2")
--- MAL testParser "if (not True and 2 <= 5 = 3 == 4) then x :=1; else y := 2;" == ("","y=2")
+-- testParser "if (not True and 2 <= 5 = 3 == 4) then x :=1; else y := 2;" == ("","y=2")
 -- testParser "x := 42; if x <= 43 then x := 1; else (x := 33; x := x+1;);" == ("","x=1")
 -- testParser "x := 42; if x <= 43 then x := 1; else x := 33; x := x+1;" == ("","x=2")
 -- testParser "x := 42; if x <= 43 then x := 1; else x := 33; x := x+1; z := x+x;" == ("","x=2,z=4")
 -- testParser "x := 44; if x <= 43 then x := 1; else (x := 33; x := x+1;); y := x*2;" == ("","x=34,y=68")
 -- testParser "x := 42; if x <= 43 then (x := 33; x := x+1;) else x := 1;" == ("","x=34")
--- MAL testParser "if (1 == 0+1 = 2+1 == 3) then x := 1; else x := 2;" == ("","x=1")
--- MAL testParser "if (1 == 0+1 = (2+1 == 4)) then x := 1; else x := 2;" == ("","x=2")
+-- testParser "if (1 == 0+1 = 2+1 == 3) then x := 1; else x := 2;" == ("","x=1")
+-- testParser "if (1 == 0+1 = (2+1 == 4)) then x := 1; else x := 2;" == ("","x=2")
 -- testParser "x := 2; y := (x - 3)*(4 + 2*3); z := x +x*(2);" == ("","x=2,y=-10,z=6")
 -- testParser "i := 10; fact := 1; while (not(i == 1)) do (fact := fact * i; i := i - 1;);" == ("","fact=3628800,i=1")
 
