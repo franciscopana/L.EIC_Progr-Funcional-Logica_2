@@ -170,6 +170,10 @@ compile (WHILE b s:xs) = Loop (compB b) (compile s) : compile xs
 compile (SEQ s:xs) = compile s ++ compile xs
 
 -- Parsers
+
+-- keywords: if, then, else, while, do, not, True, False, and, +, -, *, <=, ==, =, (, ), ;, :=
+-- variables must begin with a lowercase letter and cannot contain a keyword as a substring
+
 identifier :: Parser String
 identifier = P.many1 P.letter
 
