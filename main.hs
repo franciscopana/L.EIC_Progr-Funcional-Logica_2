@@ -1,8 +1,11 @@
 import Data.List
-
+import Data.Char (isLower)
 --import parsec
 import qualified Text.Parsec as P
 import Text.Parsec.String (Parser)
+import qualified Text.Parsec.Token as T
+import Text.Parsec.Language (emptyDef)
+
 
 
 -- PFL 2023/24 - Haskell practical assignment quickstart
@@ -174,8 +177,24 @@ compile (SEQ s:xs) = compile s ++ compile xs
 -- keywords: if, then, else, while, do, not, True, False, and, +, -, *, <=, ==, =, (, ), ;, :=
 -- variables must begin with a lowercase letter and cannot contain a keyword as a substring
 
+lexer :: T.TokenParser ()
+lexer = T.makeTokenParser $ emptyDef
+  {
+      T.reservedOpNames = ["+", "-", "*", ":=", ";", "<", "=="],
+      T.reservedNames = ["True", "False", "if", "then", "else", "while", "do", "and", "not"]
+  }
+
+keywords :: [String]
+keywords = ["True", "False", "if", "then", "else", "while", "do", "and", "not"]
+
+-- Define the identifier parser
+-- Define the identifier parser
 identifier :: Parser String
-identifier = P.many1 P.letter
+identifier = do
+  ident <- T.identifier lexer
+  if any (`isInfixOf` ident) keywords || not (isLower (case ident of (x:_) -> x))
+    then fail $ "invalid variable name: " ++ ident
+    else return ident
 
 number :: Parser Aexp
 number = NUM . read <$> P.many1 P.digit
@@ -231,19 +250,10 @@ assignment = do
   _ <- P.string ":="
   P.spaces
   e <- expr
-  return $ ASSIGN var e
-
-statement :: Parser Stm
-statement = do
-  P.spaces
-  stmt <- assignment
   P.spaces
   _ <- P.char ';'
-  P.spaces
-  return stmt
+  return $ ASSIGN var e
 
-statements :: Parser [Stm]
-statements = P.many (P.spaces >> statement)
 
 -- Booleans:
 -- with aryhtmetic expressions: <=, ==
@@ -261,12 +271,22 @@ equalityAexp = do
 
 equalityBexp :: Parser Bexp
 equalityBexp = do
-  b1 <- simpleBoolean
+  b1 <- simpleBooleanWithoutEqualityBexp
   P.spaces
   _ <- P.string "="
   P.spaces
-  b2 <- simpleBoolean
+  b2 <- simpleBooleanWithoutEqualityBexp
   return $ EQUB b1 b2
+
+simpleBooleanWithoutEqualityBexp :: Parser Bexp
+simpleBooleanWithoutEqualityBexp = 
+      P.try (P.string "True" >> return TRU)
+      P.<|> P.try (P.string "False" >> return FALS)
+      P.<|> P.try inequality
+      P.<|> P.try equalityAexp
+      P.<|> P.try negation
+      P.<|> P.try (P.char '(' *> boolean <* P.char ')')
+
 
 inequality :: Parser Bexp
 inequality = do
@@ -279,12 +299,7 @@ inequality = do
 
 simpleBoolean :: Parser Bexp
 simpleBoolean = 
-      P.try (P.string "True" >> return TRU)
-      P.<|> P.try (P.string "False" >> return FALS)
-      P.<|> P.try inequality
-      P.<|> P.try equalityAexp
-      P.<|> P.try negation
-      P.<|> P.try (P.char '(' *> boolean <* P.char ')')
+      P.try simpleBooleanWithoutEqualityBexp
       P.<|> P.try equalityBexp
 
 negation :: Parser Bexp
@@ -312,6 +327,35 @@ conjunction = do
 boolean :: Parser Bexp
 boolean = boolTerm
 
+ifStatement :: Parser Stm
+ifStatement = do
+  P.spaces
+  _ <- P.string "if"
+  P.spaces
+  bexp <- boolean
+  P.spaces
+  _ <- P.string "then"
+  P.spaces
+  stm1 <- P.try (P.char '(' *> (toSeq <$> P.many1 statement) <* P.char ')') P.<|> statement
+  P.spaces
+  _ <- P.string "else"
+  P.spaces
+  stm2 <- P.try (P.char '(' *> (toSeq <$> P.many1 statement) <* P.char ')' <* P.char ';') P.<|> statement
+  return $ IF bexp stm1 stm2
+  where
+    toSeq [x] = x
+    toSeq xs = SEQ xs
+
+statement :: Parser Stm
+statement = do
+  P.spaces
+  stmt <- P.try assignment P.<|> ifStatement
+  P.spaces
+  return stmt
+
+statements :: Parser [Stm]
+statements = P.many (P.spaces >> statement)
+
 parse :: String -> Program
 parse str = case P.parse statements "" str of
   Left err -> error $ show err
@@ -325,20 +369,17 @@ testParser programCode = (stack2Str stack, state2Str state)
 -- Examples:
 -- testParser "x := 5; x := x - 1;" == ("","x=4")
 -- testParser "x := 0 - 2;" == ("","x=-2")
--- testParser "if (not True and 2 <= 5 = 3 == 4) then x :=1; else y := 2;" == ("","y=2")
+-- MAL testParser "if (not True and 2 <= 5 = 3 == 4) then x :=1; else y := 2;" == ("","y=2")
 -- testParser "x := 42; if x <= 43 then x := 1; else (x := 33; x := x+1;);" == ("","x=1")
 -- testParser "x := 42; if x <= 43 then x := 1; else x := 33; x := x+1;" == ("","x=2")
 -- testParser "x := 42; if x <= 43 then x := 1; else x := 33; x := x+1; z := x+x;" == ("","x=2,z=4")
 -- testParser "x := 44; if x <= 43 then x := 1; else (x := 33; x := x+1;); y := x*2;" == ("","x=34,y=68")
 -- testParser "x := 42; if x <= 43 then (x := 33; x := x+1;) else x := 1;" == ("","x=34")
--- testParser "if (1 == 0+1 = 2+1 == 3) then x := 1; else x := 2;" == ("","x=1")
--- testParser "if (1 == 0+1 = (2+1 == 4)) then x := 1; else x := 2;" == ("","x=2")
+-- MAL testParser "if (1 == 0+1 = 2+1 == 3) then x := 1; else x := 2;" == ("","x=1")
+-- MAL testParser "if (1 == 0+1 = (2+1 == 4)) then x := 1; else x := 2;" == ("","x=2")
 -- testParser "x := 2; y := (x - 3)*(4 + 2*3); z := x +x*(2);" == ("","x=2,y=-10,z=6")
 -- testParser "i := 10; fact := 1; while (not(i == 1)) do (fact := fact * i; i := i - 1;);" == ("","fact=3628800,i=1")
 
 
-
--- Parser receives a string and return RIGHT and AST
--- Parser must send the AST to the compiler (without RIGHT)
--- Compiler receives AST and return Code
--- Run receives Code and return (Stack, State)
+-- == NUM VAR arithmetic expressions -> True False
+-- = TRU FALS boolean expressions -> True False
