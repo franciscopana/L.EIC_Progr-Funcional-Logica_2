@@ -349,10 +349,29 @@ ifStatement = do
     toSeq [x] = x
     toSeq xs = SEQ xs
 
+
+-- while z <= 1 do x := x+1;
+-- while (z <= 1) do (x := x+1; y := y+1;);
+whileStatement :: Parser Stm
+whileStatement = do
+  P.spaces
+  _ <- P.string "while"
+  P.spaces
+  bexp <- boolean
+  P.spaces
+  _ <- P.string "do"
+  P.spaces
+  stm <- P.try (P.char '(' *> (toSeq <$> P.many1 statement) <* P.char ')') P.<|> statement
+  return $ WHILE bexp [stm]
+  where
+    toSeq [x] = x
+    toSeq xs = SEQ xs
+
+
 statement :: Parser Stm
 statement = do
   P.spaces
-  stmt <- P.try assignment P.<|> ifStatement
+  stmt <- P.try assignment P.<|> ifStatement P.<|> whileStatement
   P.spaces
   return stmt
 
@@ -382,7 +401,3 @@ testParser programCode = (stack2Str stack, state2Str state)
 -- testParser "if (1 == 0+1 = (2+1 == 4)) then x := 1; else x := 2;" == ("","x=2")
 -- testParser "x := 2; y := (x - 3)*(4 + 2*3); z := x +x*(2);" == ("","x=2,y=-10,z=6")
 -- testParser "i := 10; fact := 1; while (not(i == 1)) do (fact := fact * i; i := i - 1;);" == ("","fact=3628800,i=1")
-
-
--- == NUM VAR arithmetic expressions -> True False
--- = TRU FALS boolean expressions -> True False
