@@ -140,7 +140,7 @@ testAssembler code = (stack2Str stack, state2Str state)
 -- testAssembler [Tru,Tru,Store "y", Fetch "x",Tru]
 -- You should get an exception with the string: "Run-time error"
 
--- run all testAssembler tests
+-- run all testAssembler tests (given in the template file)
 runTests1 :: IO ()
 runTests1 = mapM_ runTest testCases
   where
@@ -278,9 +278,7 @@ lexer = T.makeTokenParser $ emptyDef
 
 -- 'identifier' is a parser that parses an identifier (variable name).
 -- An identifier is a string that starts with a lowercase letter and can contain lowercase letters and digits.
--- The parser fails if the identifier is a reserved name or operator.
-
-
+-- The parser fails if the identifier contains a reserved name or operator as substring.
 identifier :: Parser String
 identifier = do
   ident <- T.identifier lexer
@@ -348,7 +346,6 @@ subtraction = do
 -- A term is defined as a factor followed by zero or more multiplication operations.
 -- Each multiplication operation is represented by a tuple containing a function that multiplies its input by a factor, and the factor itself.
 -- The parser returns an arithmetic expression that represents the term.
-
 term :: Parser Aexp
 term = do
   f <- factor
@@ -370,7 +367,6 @@ expr = do
 -- The assignment statement consists of a variable, followed by ":=",
 -- followed by an expression, and ends with a semicolon.
 -- Returns a 'Stm' representing the assignment.
-
 assignment :: Parser Stm
 assignment = do
   var <- identifier
@@ -492,7 +488,6 @@ boolean = boolTerm
 -- Otherwise, a single statement is parsed.
 --
 -- The parsed if statement is represented using the 'IF' constructor of the 'Stm' type.
-
 ifStatement :: Parser Stm
 ifStatement = do
   P.spaces
@@ -579,6 +574,8 @@ testParser programCode = (stack2Str stack, state2Str state)
 -- testParser "x := 2; y := (x - 3)*(4 + 2*3); z := x +x*(2);" == ("","x=2,y=-10,z=6")
 -- testParser "i := 10; fact := 1; while (not(i == 1)) do (fact := fact * i; i := i - 1;);" == ("","fact=3628800,i=1")
 
+
+-- run all testParser tests (given in the template file)
 runTests2 :: IO ()
 runTests2 = mapM_ runTest testCases
   where
